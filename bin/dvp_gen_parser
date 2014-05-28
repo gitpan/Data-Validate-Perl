@@ -38,7 +38,7 @@ sub main {
 
     print STDERR "parsing specification\n" if $opt{d};
     my $yapp_grammar = gen_yp_rules($ARGV[0]);
-    print STDERR $yapp_grammar if $opt{v};
+    #print STDERR $yapp_grammar if $opt{v};
     my ( $F, $grammar_file ) = tempfile('grammar_XXXXXXXX', SUFFIX => '.yp', UNLINK => 1);
     print STDERR "saving grammar to temp file: $grammar_file\n" if $opt{d};
     print $F $yapp_grammar;
@@ -117,6 +117,7 @@ Each data item here has a symbolic prefix, pretty much like in perl:
    @foo: 'bar1 'bar2 'bar3
 
 Generic array rules:
+
    1. each declared array item may or may NOT appear (optional), except for the case of single item;
    2. relationship between multiple declared array items is OR;
    3. when array is declared, item(s) not in the declaration will be rejected;
@@ -130,6 +131,9 @@ Generic array rules:
 
    # the hash 'foo' may contain a key 'bar', whose value is array
    %foo: @bar
+   # or the key and value symbol may be different
+   %foo: @(bar)bar_list
+
 
    # the hash 'foo' may contain a key 'bar', whose value is another
    # hash
@@ -144,6 +148,7 @@ Generic array rules:
    %foo: @bar1 %bar2 $bar3
 
 Generic hash rules:
+
    1. each declared hash key may or may NOT appear (optional), except for the case of single key;
    2. relationship between multiple declared keys is OR;
    3. when hash is declared, key(s) not in the declaration will be rejected;
@@ -160,6 +165,7 @@ China mainland cities from a yaml file. Before taking the information inside
 you want to make sure this file looks like the one with proper data.
 
 The sample format of this yaml file is like below:
+
    ---
    - city: Beijing
      postcode: 100000
@@ -237,7 +243,6 @@ variable named C<YYDEBUG> and defaults off.
 =head1 BUGS
 
    1. no support of required hash key(s);
-   2. hash key namespace clash;
 
 =head1 LICENSE AND COPYRIGHT
 

@@ -5,7 +5,7 @@ use strict;
 use warnings FATAL => 'all';
 use Carp;
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 our @ISA       = qw/Exporter/;
 our @EXPORT    = qw/gen_yp_rules/;
@@ -72,14 +72,19 @@ sub gen_yp_rules {
             my ( $k, $v ) = @l;
             croak "invalid rule name: $k" if $k !~ /^($lhs_type_regex)(\w+)$/io;
             # key = name:type
-            my $key = join(':', $2, $lhs_type{$1});
+            my $type = $lhs_type{$1};
+            my $name = $2;
+            my $key = join(':', $name, $type);
             my @v = ();
             foreach my $i (split /\s+/io, $v) {
-                if ($i =~ /^($rhs_type_regex)(\w+)$/io) {
+                if ($i =~ /^($rhs_type_regex)(?:\(((?:\w+|\*))\))?(\w+)$/io) {
                     my $t = $rhs_type{$1};
-                    my $n = $2;
+                    my $k = $2;
+                    my $n = $3;
+                    croak "left-hand side must be a hash: $name" if $k and $type ne 'HASH';
+                    $k = $n if $type eq 'HASH' and !$k;
                     # [ name, type ]
-                    push @v, [ $n, $t ];
+                    push @v, $type eq 'HASH' ? [ $n, $t, $k ] : [ $n, $t ];
                     $rule_required{join(':', $n, $t)} = $t;
                 }
                 else {
@@ -115,26 +120,24 @@ sub gen_yp_rules {
     #     print STDERR Data::Dumper::Dumper(\%rule), "\n";
     # }
 
-    # NOTE: hack
-    my $namespace_pop = '__NAMESPACE_POP';
     my $yapp = "%%\n";
-    my @stack     = ( $start, );
-    my @namespace = ();
+    my $count = 0;
+    my @stack = ( [ $start, $count++ ], );
     my $cb_process_children = sub {
-        my ( $pname, $children, ) = @_;
+        my ( $children, ) = @_;
 
-        unshift @stack, $namespace_pop unless $pname eq $start;
-        for (my $i = $#{$children}; $i >= 0; $i--) {
+        for (my $i = 0; $i < @$children; $i++) {
             my $child= $children->[$i];
             my $key  = join(':', $child->[0], $child->[1]);
             my $name = $child->[0];
             my $type = $child->[1];
+            my $cnt  = $count++;
             if (exists $rule{$key}) {
                 if ($type eq 'ARRAY' or $type eq 'HASH') {
-                    unshift @stack, $key;
+                    push @stack, [ $key, $cnt ];
                 }
                 elsif ($type eq 'SCALAR') {
-                    unshift @stack, $key;
+                    push @stack, [ $key, $cnt ];
                 }
                 elsif ($type eq 'SYMBOL') {
                     # NOOP: skip
@@ -151,17 +154,15 @@ sub gen_yp_rules {
     my $has_list_enum   = 0;
     my $has_scalar_enum = 0;
     my $has_simple_hash = 0;
+    my $rule_format = 'rule%04d';
     while (@stack) {
-        my $k = shift @stack;
-        # process namespace first
-        if ($k eq $namespace_pop) {
-            pop @namespace;
-            next;
-        }
+        my $item = shift @stack;
+        my $k = $item->[0];
+        my $c = $item->[1];
 
         my ( $name, $type, ) = split /:/io, $k, 2;
         my $children = $rule{$k};
-        my $rule = join('_', @namespace, $name);
+        my $rule = sprintf($rule_format, $c);
         if ($type eq 'HASH') {
             # there shouldn't be any enum (such as 'value) in hash declaration
             croak "invalid hash declaration for $name: scalar item found" if grep { $_->[1] eq 'SYMBOL' } @$children;
@@ -174,11 +175,11 @@ sub gen_yp_rules {
             else {
                 $yapp .= "$rule: '{' ${rule}_elements  '}';\n";
                 $yapp .= "${rule}_elements: ${rule}_element ${rule}_elements | ${rule}_element;\n";
-                push @namespace, $name unless $k eq $start;
                 $yapp .= "${rule}_element: ". join(
-                    ' | ', map { "'$_' ". join('_', @namespace, $_) } map { $_->[0] } @$children). ";\n";
-                $cb_process_children->($k, $children);
+                    ' | ', map { "'". $children->[$_][2]. "' ". sprintf($rule_format, $count+$_) } 0 .. $#{$children}). ";\n";
+                $cb_process_children->($children);
             }
+            # NOREACH
         }
         elsif ($type eq 'ARRAY') {
             if (grep { $_->[1] eq 'SYMBOL' } @$children) {
@@ -199,10 +200,9 @@ sub gen_yp_rules {
                 }
                 else {
                     $yapp .= "${rule}_items: ${rule}_item ${rule}_items | ${rule}_item;\n";
-                    push @namespace, $name unless $k eq $start;
                     $yapp .= "${rule}_item: ". join(
-                        ' | ', map { join('_', @namespace, $_) } map { $_->[0] } @$children). ";\n";
-                    $cb_process_children->($k, $children);
+                        ' | ', map { sprintf($rule_format, $count+$_) } 0 .. $#{$children}). ";\n";
+                    $cb_process_children->($children);
                 }
             }
         }
@@ -251,7 +251,7 @@ you are unsure what this is.
 
 A common parsing mechanism applies state machine onto a string, such
 as regular expression. This part is easy to follow. In this module a
-Yacc state machine is used, but the target is not plain text but a
+Yacc state machine is used, the target is not plain text but a
 in-memory data structure - a tree made up by several perl
 scalar/array/hash items.
 

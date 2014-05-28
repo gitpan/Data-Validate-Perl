@@ -18,8 +18,7 @@ WriteMakefile(
         'Test::More' => 0,
     },
     PREREQ_PM => {
-        #'ABC'              => 1.6,
-        #'Foo::Bar::Module' => 5.0401,
+        'Parse::Yapp'       => 1.05,
     },
     EXE_FILES => [
         'bin/dvp_gen_parser',
